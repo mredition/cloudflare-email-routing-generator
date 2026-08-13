@@ -56,11 +56,11 @@ The following are explicit, copy-paste commands covering typical Debian/Ubuntu V
 
 2) Get the project (clone or copy)
    - Clone via SSH:
-     git clone git@github.com:<your-username>/<your-repo>.git ~/create-routes
+     git clone git@github.com:mredition/cloudflare-email-routing-generator.git ~/create-routes
      cd ~/create-routes
 
    - Or clone via HTTPS:
-     git clone https://github.com/<your-username>/<your-repo>.git ~/create-routes
+     git clone https://github.com/mredition/cloudflare-email-routing-generator.git ~/create-routes
      cd ~/create-routes
 
    - If you already uploaded the three files to the VPS (create_routes.sh, names.txt, README.md), ensure they are in a directory, e.g. /opt/create-routes:
