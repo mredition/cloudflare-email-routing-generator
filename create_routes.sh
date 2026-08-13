@@ -9,7 +9,6 @@ set -euo pipefail
 # or
 #   export CF_EMAIL="..." && export CF_API_KEY="..."
 
-# CONFIG (no persistent secrets)
 CF_API_TOKEN="${CF_API_TOKEN:-}"
 CF_EMAIL="${CF_EMAIL:-}"
 CF_API_KEY="${CF_API_KEY:-}"
@@ -44,22 +43,31 @@ fi
 
 API="https://api.cloudflare.com/client/v4"
 
-# Load sections from names file (section headers: # --FIRST_NAMES--, # --LAST_NAMES--, # --OBJECTS--)
+# Load sections from names file into an array named by $3
+# Usage: load_section "$NAMES_FILE" "FIRST_NAMES" FIRST_NAMES
 load_section() {
-  local file="$1" section="$2" -n_out="$3"
-  local -n out=$3
+  local file="$1"
+  local section="$2"
+  local varname="$3"
+
   if [[ ! -f "$file" ]]; then
     echo "Error: names file not found: $file" >&2
     exit 1
   fi
-  mapfile -t out < <(
+
+  # mapfile accepts a variable name; this creates an array named by $varname
+  mapfile -t "$varname" < <(
     awk -v sec="# --${section}--" '
       $0 == sec {p=1; next}
       /^# --.*--/ && p {exit}
       p && NF && $1 !~ /^#/ {print tolower($0)}
     ' "$file"
   )
-  if [[ ${#out[@]} -eq 0 ]]; then
+
+  # check length of the created array
+  local len
+  eval "len=\${#${varname}[@]}"
+  if [[ $len -eq 0 ]]; then
     echo "Error: section '$section' is missing or empty in $file" >&2
     exit 1
   fi
@@ -70,7 +78,7 @@ load_section "$NAMES_FILE" "FIRST_NAMES" FIRST_NAMES
 load_section "$NAMES_FILE" "LAST_NAMES" LAST_NAMES
 load_section "$NAMES_FILE" "OBJECTS" OBJECTS
 
-# Generate different styles of local parts (same styles you had)
+# Generate different styles of local parts
 random_local() {
   local first=${FIRST_NAMES[$RANDOM % ${#FIRST_NAMES[@]}]}
   local style=$((RANDOM % 5))
