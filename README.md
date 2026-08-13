@@ -35,159 +35,116 @@ Notes
   - # --FIRST_NAMES--
   - # --LAST_NAMES--
   - # --OBJECTS--
-  Lines starting with `#` (aside from section markers) and blank lines are ignored.
+  Lines beginning with `#` (aside from section markers) and blank lines are ignored.
 - The script requires `jq` and `curl`.
-- The script normalizes name lines to lowercase.
+- Name lines are normalized to lowercase by the script.
 
-Run on a VPS or local computer (complete commands)
--------------------------------------------------
-The following are explicit, copy-paste commands covering typical Debian/Ubuntu VPS or a local Linux box. Adjust user, paths and domain values where needed.
+Run on a VPS (self-contained, copy/paste)
+----------------------------------------
+This section is a standalone quickstart for a Debian/Ubuntu VPS. Paste each block into the VPS shell and run it. Each block is self-contained for its purpose — do not mix lines from different blocks.
 
-1) Install prerequisites
-   - Debian/Ubuntu:
-     sudo apt-get update
-     sudo apt-get install -y curl jq git
+IMPORTANT: Replace example.com, you@example.com, "your_token_here" and "your_zone_id_here" with real values before executing the step that runs the script or writes system files.
 
-   - RHEL/CentOS:
-     sudo yum install -y curl jq git
+A — Install prerequisites (one-shot)
+# Update package list and install git, curl and jq
+sudo apt-get update && sudo apt-get install -y git curl jq
 
-   - macOS (Homebrew):
-     brew install curl jq git
+B — Download the repository and enter its folder (HTTPS)
+# Create target directory, clone and change directory
+mkdir -p "$HOME/create-routes" && git clone https://github.com/mredition/cloudflare-email-routing-generator.git "$HOME/create-routes" && cd "$HOME/create-routes"
 
-2) Get the project (clone or copy)
-   - Clone via SSH:
-     git clone git@github.com:mredition/cloudflare-email-routing-generator.git ~/create-routes
-     cd ~/create-routes
+# Optional SSH clone (only if your SSH key is configured on GitHub):
+# mkdir -p "$HOME/create-routes" && git clone git@github.com:mredition/cloudflare-email-routing-generator.git "$HOME/create-routes" && cd "$HOME/create-routes"
 
-   - Or clone via HTTPS:
-     git clone https://github.com/mredition/cloudflare-email-routing-generator.git ~/create-routes
-     cd ~/create-routes
+C — Make the script executable
+chmod +x create_routes.sh
 
-   - If you already uploaded the three files to the VPS (create_routes.sh, names.txt, README.md), ensure they are in a directory, e.g. /opt/create-routes:
-     sudo mkdir -p /opt/create-routes
-     sudo chown $USER:$USER /opt/create-routes
-     cp create_routes.sh names.txt README.md /opt/create-routes/
-     cd /opt/create-routes
+D — Create a secure environment file (store secrets, reusable)
+# Create ~/.routes_env with your credentials and configuration
+cat > "$HOME/.routes_env" <<'EOF'
+export CF_API_TOKEN="your_token_here"
+export ZONE_ID="your_zone_id_here"
+export NAMES_FILE="$HOME/create-routes/names.txt"
+export DELAY="0.4"
+EOF
+chmod 600 "$HOME/.routes_env"
 
-3) Make the script executable
-   chmod +x create_routes.sh
+# Load the file into the current shell
+. "$HOME/.routes_env"
 
-4) Verify Cloudflare token (optional quick check)
-   # If using CF_API_TOKEN:
-   export CF_API_TOKEN="your_token_here"
-   curl -sS -X GET "https://api.cloudflare.com/client/v4/user/tokens/verify" \
-     -H "Authorization: Bearer $CF_API_TOKEN" \
-     -H "Content-Type: application/json" | jq
+E — Verify Cloudflare token (optional)
+curl -sS -X GET "https://api.cloudflare.com/client/v4/user/tokens/verify" \
+  -H "Authorization: Bearer $CF_API_TOKEN" \
+  -H "Content-Type: application/json" | jq
 
-   # If the token is valid you'll see success: true in the JSON output.
+F — Test run (dry run, single address)
+./create_routes.sh example.com 1 you@example.com
 
-5) Provide credentials (secure, recommended)
-   - Create a protected env file in your home directory:
-     cat > ~/.routes_env <<'EOF'
-     export CF_API_TOKEN="your_token_here"
-     export ZONE_ID="your_zone_id_here"
-     export NAMES_FILE="/home/ubuntu/create-routes/names.txt"   # adjust path
-     export DELAY="0.4"
-     EOF
-     chmod 600 ~/.routes_env
+# After this command, check Cloudflare Email Routing in the dashboard to confirm the rule was created.
 
-   - Load it for the current shell:
-     . ~/.routes_env
+Background and scheduling (standalone blocks)
+---------------------------------------------
+Each block assumes steps A–F are done and that ~/.routes_env and the repo exist in $HOME/create-routes.
 
-6) Test a dry run (one or two addresses)
-   ./create_routes.sh example.com 1 you@example.com
+1) Run in background now (nohup)
+. "$HOME/.routes_env"
+nohup "$HOME/create-routes/create_routes.sh" example.com 200 you@example.com > "$HOME/create-routes.log" 2>&1 &
+disown
+# Monitor:
+tail -f "$HOME/create-routes.log"
 
-   After running, check Cloudflare Email Routing UI or use the API to list rules:
-   curl -sS -X GET "https://api.cloudflare.com/client/v4/zones/${ZONE_ID}/email/routing/rules" \
-     -H "Authorization: Bearer ${CF_API_TOKEN}" \
-     -H "Content-Type: application/json" | jq
+2) Schedule with cron (daily at 02:00)
+# Open your crontab editor and add exactly the following line (replace paths as needed):
+0 2 * * * . $HOME/.routes_env && $HOME/create-routes/create_routes.sh example.com 5 you@example.com >> $HOME/create-routes.log 2>&1
 
-7) Run interactively (screen / tmux)
-   - screen:
-     screen -S create-routes
-     . ~/.routes_env
-     ./create_routes.sh example.com 50 you@example.com
-     # Detach with Ctrl-A D, reattach with screen -r create-routes
+3) Run once via systemd (one-shot)
+# Copy files to /opt/create-routes and set permissions
+sudo mkdir -p /opt/create-routes
+sudo chown "$(whoami)":"$(whoami)" /opt/create-routes
+sudo cp "$HOME/create-routes/create_routes.sh" "$HOME/create-routes/names.txt" /opt/create-routes/
+cd /opt/create-routes
+sudo chmod +x create_routes.sh
 
-   - tmux:
-     tmux new -s create-routes
-     . ~/.routes_env
-     ./create_routes.sh example.com 50 you@example.com
-     # Detach with Ctrl-B D, reattach with tmux attach -t create-routes
+# Create a system-wide environment file (edit values as needed)
+sudo tee /etc/default/create-routes.env > /dev/null <<'EOF'
+CF_API_TOKEN=your_token_here
+ZONE_ID=your_zone_id_here
+NAMES_FILE=/opt/create-routes/names.txt
+DELAY=0.4
+EOF
+sudo chmod 600 /etc/default/create-routes.env
 
-8) Run in background (nohup + disown) — useful for short long-running jobs
-   . ~/.routes_env
-   nohup ./create_routes.sh example.com 200 you@example.com > ~/create-routes.log 2>&1 &
-   disown
+# Create the systemd unit file
+sudo tee /etc/systemd/system/create-routes.service > /dev/null <<'EOF'
+[Unit]
+Description=Create Cloudflare email routing rules (one-shot)
+After=network.target
 
-   # Check progress:
-   tail -f ~/create-routes.log
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/default/create-routes.env
+WorkingDirectory=/opt/create-routes
+ExecStart=/opt/create-routes/create_routes.sh example.com 10 you@example.com
+User=$(whoami)
+Group=$(whoami)
 
-9) Schedule with cron (absolute paths required)
-   - Edit crontab for your user:
-     crontab -e
+[Install]
+WantedBy=multi-user.target
+EOF
 
-   - Example: run daily at 02:00 using the env file:
-     0 2 * * * . /home/ubuntu/.routes_env && /home/ubuntu/create-routes/create_routes.sh example.com 5 you@example.com >> /home/ubuntu/create-routes.log 2>&1
+# Reload systemd and run the unit now
+sudo systemctl daemon-reload
+sudo systemctl start create-routes.service
+sudo systemctl status create-routes.service
+# View logs
+sudo journalctl -u create-routes.service --no-pager -n 200
 
-   Notes:
-   - Use absolute paths in cron entries.
-   - Make sure the env file uses full paths and is readable by the cron user (but not world-readable).
-
-10) Run as a systemd one-shot service (recommended for repeated/manual runs)
-    - Create working directory and copy files:
-      sudo mkdir -p /opt/create-routes
-      sudo chown $USER:$USER /opt/create-routes
-      cp create_routes.sh names.txt /opt/create-routes/
-      cd /opt/create-routes
-      chmod +x create_routes.sh
-
-    - Create an environment file (system-wide, owned by root):
-      sudo tee /etc/default/create-routes.env > /dev/null <<'EOF'
-      CF_API_TOKEN=your_token_here
-      ZONE_ID=your_zone_id_here
-      NAMES_FILE=/opt/create-routes/names.txt
-      DELAY=0.4
-      EOF
-      sudo chmod 600 /etc/default/create-routes.env
-
-    - Create the systemd unit:
-      sudo tee /etc/systemd/system/create-routes.service > /dev/null <<'EOF'
-      [Unit]
-      Description=Create Cloudflare email routing rules (one-shot)
-      After=network.target
-
-      [Service]
-      Type=oneshot
-      EnvironmentFile=/etc/default/create-routes.env
-      WorkingDirectory=/opt/create-routes
-      ExecStart=/opt/create-routes/create_routes.sh example.com 10 you@example.com
-      User=$USER
-      Group=$USER
-
-      [Install]
-      WantedBy=multi-user.target
-      EOF
-
-    - Reload systemd, run now, and enable (if you want):
-      sudo systemctl daemon-reload
-      sudo systemctl start create-routes.service
-      sudo systemctl status create-routes.service
-      # Optional: enable to allow manual starts (oneshot is not typical to enable auto-run)
-      sudo systemctl enable --now create-routes.service
-
-    - Check logs:
-      sudo journalctl -u create-routes.service --no-pager -n 200
-
-11) Remove / cleanup (if needed)
-    - To remove the service:
-      sudo systemctl stop create-routes.service
-      sudo systemctl disable create-routes.service
-      sudo rm /etc/systemd/system/create-routes.service
-      sudo rm /etc/default/create-routes.env
-      sudo systemctl daemon-reload
-
-    - Remove created rules via Cloudflare UI or the API (be careful; the script creates rules — deletion is separate).
+# To remove the unit and env later:
+sudo systemctl stop create-routes.service || true
+sudo systemctl disable create-routes.service || true
+sudo rm -f /etc/systemd/system/create-routes.service
+sudo rm -f /etc/default/create-routes.env
+sudo systemctl daemon-reload
 
 Tips and important notes
 ------------------------
@@ -199,13 +156,13 @@ Tips and important notes
 
 Troubleshooting
 ---------------
-- Missing jq: you will get JSON construction errors — install jq as shown above.
+- Missing jq: install jq (sudo apt-get install -y jq).
 - API errors: the script prints Cloudflare API error messages; check token scope and ZONE_ID.
-- Permission errors writing to /etc or /opt: use sudo for those steps, and set correct ownership after copying files.
+- Permission errors writing to /etc or /opt: use sudo for those steps and set correct ownership after copying files.
 
 Running from GitHub Actions (example)
 ------------------------------------
-If you want to run this in CI (e.g., to populate test addresses), create a workflow with secrets referenced as environment variables. Example snippet:
+Example workflow snippet:
 
 ```yaml
 # .github/workflows/create-routes.yml (example)
